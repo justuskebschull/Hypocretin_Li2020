@@ -1,0 +1,214 @@
+---
+title: "Hcrt analysis - females only"
+output: pdf_document
+---
+
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "female_images_gr/"
+)
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(sctransform)
+library(cowplot)
+library(dplyr)
+library(scrattch.hicat)
+
+```
+
+load only Hcrt core cells, with doublets removed
+```{r}
+load('~/postdoc2/Shibin_hypocretin/hypocretin/hcrtcorecells.RData')
+```
+relabel clusters
+```{r}
+hcrt<-RenameIdents(hcrt,"4"="1")
+hcrt<-RenameIdents(hcrt,"10"="2")
+hcrt<-RenameIdents(hcrt,"9"="3")
+hcrt$merged.res.2.renamed<-Idents(hcrt)
+hcrt$merged.res.2.renamed<-factor(hcrt$merged.res.2.renamed,levels=c("0","1","2","3"))
+Idents(hcrt)<-'merged.res.2.renamed'
+```
+split by sex - males here:
+```{r}
+sex<-as.factor(hcrt$librarynames %in% c("YF2","OF2"))
+levels(sex)<-c('male','female')
+hcrt$sex<-sex
+Idents(hcrt)<-'sex'
+hcrt<-subset(hcrt,idents='female')
+
+```
+
+
+
+check genes and umis detected per library -- data quality
+
+```{r}
+VlnPlot(hcrt,features=c("nFeature_RNA","nCount_RNA"),group.by='librarynames',pt.size = 0, cols=c("gray40","red"))
+```
+
+
+```{r,fig.width=15,fig.height=6}
+p1<-DimPlot(hcrt, label = TRUE,group.by='merged.res.2.renamed') + NoLegend()
+p2<-DimPlot(hcrt, label = TRUE,group.by='age',cols=c("gray40","red"))
+p3<-DimPlot(hcrt, label = FALSE,group.by='librarynames',cols=c("gray40","red")) 
+plot_grid(p1,p2,p3,ncol=3)
+```
+check genes and umis detected per cluster -- data quality + some notion of how large a cell we are looking at.
+
+```{r}
+VlnPlot(hcrt,features=c("nFeature_RNA","nCount_RNA"),group.by='merged.res.2.renamed',pt.size = 0)
+```
+Look for cluster specific genes:
+```{r}
+Idents(hcrt)<-'merged.res.2.renamed'
+markers<-FindAllMarkers(hcrt,logfc.threshold = log(2))
+markers %>% group_by(cluster) %>% top_n(5,avg_logFC)
+```
+```{r}
+markers.filtered<-markers[markers$p_val_adj<0.05,]
+#write.csv(markers.filtered,file='~/postdoc2/Shibin_hypocretin/hypocretin/females_cluster_DEGs.csv')
+```
+
+
+plot a heatmap
+```{r}
+markers %>% group_by(cluster) %>% top_n(10,avg_logFC) ->top10
+DoHeatmap(hcrt, features = top10$gene,slot='data')+
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 10, name = "Greys")))
+```
+```{r}
+DoHeatmap(hcrt, features = top10$gene,slot='data')+
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 10, name = "Oranges")))
+```
+Featureplots of marker genes
+
+```{r,fig.width=15,fig.height=10}
+FeaturePlot(hcrt,features=c("Snap25",'Hcrt',"Hmcn1","Cntn4","Qrfp","Sgcd","Adgrb3","Tmem108","Col25a1"))
+```
+```{r,fig.width=15,fig.height=10}
+VlnPlot(hcrt,features=c("Snap25",'Hcrt',"Hmcn1","Cntn4","Qrfp","Sgcd","Adgrb3","Tmem108"),group.by = "merged.res.2.renamed",ncol=3)
+```
+
+Mickelsen's genes:
+```{r,fig.width=15,fig.height=10}
+FeaturePlot(hcrt,c("Hcrt", "Pdyn", "Npvf", "Rfx4", "Scg2", "Nptx2", "Lhx9", "Pcsk1", "Nek7", "Plagl1", "Vgf", "Slc2a13"))
+```
+
+do young and old cells contribute differently to the 4 clusters?
+total cell numbers.
+```{r}
+table(hcrt$merged.res.2.renamed,hcrt$librarynames)
+```
+percentage.
+```{r}
+t<-table(hcrt$merged.res.2.renamed,hcrt$librarynames)
+prop.table(t,2) # cell percentages
+
+```
+the distribution of cells across the 4 clusters from each library is remarkably similar.
+
+
+
+Lets look for differentially expressed genes between young and old in the supercluster of 0,1,2
+
+
+```{r}
+hcrtcore<-subset(hcrt,idents=c("0","1","2"))
+```
+
+```{r}
+table(hcrtcore$age)
+```
+```{r}
+table(hcrtcore$librarynames)
+```
+
+first though, Mickelsen's genes:
+```{r,fig.width=15,fig.height=10}
+FeaturePlot(hcrtcore,c("Hcrt", "Pdyn", "Npvf", "Rfx4", "Scg2", "Nptx2", "Lhx9", "Pcsk1", "Nek7", "Plagl1", "Vgf", "Slc2a13"))
+```
+and split by age
+
+```{r,fig.width=15,fig.height=10}
+Idents(hcrtcore)<-'age'
+VlnPlot(hcrtcore,c("Hcrt", "Pdyn", "Npvf", "Rfx4", "Scg2", "Nptx2", "Lhx9", "Pcsk1", "Nek7", "Plagl1", "Vgf", "Slc2a13"),cols=c("gray40","red"))
+```
+
+
+```{r}
+agemarkers<-FindMarkers(hcrtcore,ident.2="young",ident.1="old")
+#agemarkers
+```
+plot heatmap of sorted genes.
+```{r}
+a<-agemarkers[agemarkers$p_val_adj<0.05,]
+b<-agemarkers[order(a$avg_logFC,decreasing=T),]
+DoHeatmap(hcrtcore,features=rownames(b),group.by='librarynames',slot='data')+
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 9, name = "Greys")))
+```
+```{r}
+DoHeatmap(hcrtcore,features=rownames(b),group.by='librarynames',slot='data')+
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 9, name = "Oranges")))
+```
+
+
+plot all significant makers.
+```{r,fig.width=15,fig.height=40}
+Idents(hcrtcore)<-"age"
+VlnPlot(hcrtcore,features=rownames(b),pt.size = 0,cols=c("gray40","red"))
+```
+
+
+what does this look like in a volcano plot?
+```{r}
+#try DEseq DEG test
+agemarkers2<-FindMarkers(hcrtcore,ident.2="young",ident.1="old",logfc.threshold = 0)
+#agemarkers2
+```
+```{r,fig.height=6,fig.width=6}
+# convert from ln to log2 fold change.
+agemarkers2$avg_log2FC<-agemarkers2$avg_logFC*log2(exp(1))
+library(EnhancedVolcano)
+EnhancedVolcano(agemarkers2,
+                lab=rownames(agemarkers2),
+                x='avg_log2FC',
+                y='p_val_adj',
+                xlim=c(-2,3.5),
+                FCcutoff=0.25,
+                transcriptPointSize=3,
+                transcriptLabSize = 5)
+```
+
+
+
+
+New plots of KCNQ channels 
+```{r,fig.width=15,fig.height=10}
+genesofinterest<-c("Kcnq1","Kcnq2","Kcnq3","Kcnq4","Kcnq5")
+VlnPlot(hcrtcore,genesofinterest,y.max=4,pt.size = 0,cols=c("gray40","red"))
+```
+
+Fraction expressed.
+
+```{r}
+a <- DotPlot(object = hcrtcore, features = genesofinterest)
+a$data[,c('features.plot','id','pct.exp')]
+```
+
+
+
+```{r}
+#write.csv(agemarkers2[agemarkers2$p_val_adj<0.05,],file = '~/postdoc2/Shibin_hypocretin/hypocretin/agemarkers_female.csv')
+```
+
+```{r}
+
+```
+
+
+
+
